@@ -1,0 +1,14 @@
+[project]
+name = "market-maker"
+version = "0.1.0"
+description = "A simulated commodity trading market, with hundreds of agents communicating with a market server of ZeroMQ"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
