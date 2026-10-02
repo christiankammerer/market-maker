@@ -3,7 +3,6 @@ from collections import deque
 from sortedcontainers import SortedDict    
 from enum import Enum
 from uuid import uuid4
-from engine import CancelResult, MatchResult
 
 class Side(Enum):
     BUY = "buy"
@@ -37,9 +36,25 @@ class OrderBook:
                 self.bids[order.price] = deque([order])
         self.orders_by_id[order.id] = order
 
+    def consume(self, order_id: str, quantity: int) -> None:
+        order = self.orders_by_id[order_id]
+        front = self.best_ask() if order.side == Side.SELL else self.best_bid()
+        if front is None or front.id != order_id:
+            raise ValueError(f"{order_id} is not at the inside")
+        elif quantity <= 0 or quantity > order.quantity:
+            raise ValueError(f"cannot consume {quantity} from {order_id}")
+        levels = self.asks if order.side == Side.SELL else self.bids
+        order.quantity -= quantity
+        if order.quantity == 0:
+            queue = levels[order.price]
+            queue.popleft()
+            del self.orders_by_id[order_id]
+            if not queue:
+                del levels[order.price]
+
+
     def best_ask(self) -> Order | None:
         if len(self.asks) == 0: 
-            print(self.asks.peekitem(0)[0])
             return None
         else: 
             price, queue = self.asks.peekitem(0)
@@ -66,19 +81,14 @@ class OrderBook:
     def __contains__(self, order_id: str) -> bool:
         return order_id in self.orders_by_id
 
-    def cancel(self, order_id: str) -> 
-
-if __name__ == "__main__":
-    book = OrderBook()
-    order1 = Order(str(uuid4()), str(uuid4()), Side.SELL, 100, 20)
-    order2 = Order(str(uuid4()), str(uuid4()), Side.BUY, 115, 20)
-    order3 = Order(str(uuid4()), str(uuid4()), Side.BUY, 108, 20)
-    order4 = Order(str(uuid4()), str(uuid4()), Side.SELL, 120, 20)
-    order5 = Order(str(uuid4()), str(uuid4()), Side.SELL, 111, 20)
-    order6 = Order(str(uuid4()), str(uuid4()), Side.BUY, 100, 20)
-    book.add(order1)
-    book.add(order2)
-    book.add(order3)
-    book.add(order4)
-    book.add(order5)
-    book.add(order6)
+    def cancel(self, order_id: str) -> None:
+        order = self.orders_by_id.get(order_id)
+        if order is None:
+            raise KeyError(f"Order with id {order_id} does not exist")
+        del self.orders_by_id[order_id]
+        levels = self.asks if order.side == Side.SELL else self.bids
+        queue = levels[order.price]
+        queue.remove(order)
+        if not queue: # queue is now empty
+            del levels[order.price]
+        return order
