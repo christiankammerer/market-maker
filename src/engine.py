@@ -19,7 +19,7 @@ class MatchingEngine:
             qty = min(order.quantity, resting.quantity)
             self.book.consume(resting.id, qty)
             order.quantity -= qty
-            trades.append(Trade(order.price, qty, order.id, resting.id, 
+            trades.append(Trade(resting.price, qty, order.id, resting.id, 
                                 order.client_id, resting.client_id))
         resting_order = None
         if order.quantity > 0:
@@ -32,7 +32,12 @@ class MatchingEngine:
         return CancelResult(order)
 
     def _reject_reason(self, order: Order) -> str | None:
-        return None
+        if order.id in self.book:
+            return "duplicate order_id"
+        if order.price <= 0:
+            return "non-positive price"
+        if order.quantity <= 0:
+            return "non-positive quantity"
 
     def _crosses(self, incoming, resting): 
         # Return True if ask price is below highest bid, or bid price is above lowest ask

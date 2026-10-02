@@ -92,3 +92,71 @@ def test_partial_fill(engine):
     assert result.resting == Order("ask", "seller", Side.SELL, 80, 6)
     assert engine.book.best_ask().quantity == 6
     assert "bid" not in engine.book
+
+def test_buy_below_ask_rests(engine):
+    ask = Order("ask", "seller", Side.SELL, 100, 10)
+    engine.submit(ask)
+    bid = Order("bid", "buyer", Side.BUY, 90, 5)
+    result = engine.submit(bid)
+    assert result.trades == []
+    assert result.resting == bid
+    assert result.reject_reason is None
+    assert engine.book.best_ask() == ask
+    assert engine.book.best_bid() == bid
+
+def test_buy_partially_fills_ask(engine):
+    ask = Order("ask", "seller", Side.SELL, 100, 10)
+    engine.submit(ask)
+    bid = Order("bid", "buyer", Side.BUY, 110, 4)
+    result = engine.submit(bid)
+    assert result.trades == [Trade(100, 4, bid.id, ask.id, bid.client_id, ask.client_id)]
+    assert result.resting is None
+    assert engine.book.best_ask().quantity == 6
+    assert "bid" not in engine.book
+
+def test_buy_walks_two_price_levels(engine):
+    first = Order("ask-100", "seller", Side.SELL, 100, 5)
+    second = Order("ask-105", "seller", Side.SELL, 105, 5)
+    too_high = Order("ask-120", "seller", Side.SELL, 120, 10)
+    engine.submit(first)
+    engine.submit(second)
+    engine.submit(too_high)
+    bid = Order("bid", "buyer", Side.BUY, 110, 12)
+    result = engine.submit(bid)
+    assert result.trades == [
+        Trade(100, 5, "bid", "ask-100", "buyer", "seller"),
+        Trade(105, 5, "bid", "ask-105", "buyer", "seller"),
+    ]
+    assert result.resting == Order("bid", "buyer", Side.BUY, 110, 2)
+    assert engine.book.best_ask().id == "ask-120"
+    assert engine.book.best_bid().quantity == 2
+
+def test_same_price_fills_oldest_first(engine):
+    first = Order("first", "seller-a", Side.SELL, 100, 4)
+    second = Order("second", "seller-b", Side.SELL, 100, 4)
+    engine.submit(first)
+    engine.submit(second)
+    bid = Order("bid", "buyer", Side.BUY, 100, 6)
+    result = engine.submit(bid)
+    assert result.trades == [
+        Trade(100, 4, "bid", "first", "buyer", "seller-a"),
+        Trade(100, 2, "bid", "second", "buyer", "seller-b"),
+    ]
+    assert result.resting is None
+    assert engine.book.best_ask().id == "second"
+    assert engine.book.best_ask().quantity == 2
+    assert "first" not in engine.book
+
+def test_cancel_order_behind_front(engine):
+    front = Order("front", "seller-a", Side.SELL, 100, 5)
+    behind = Order("behind", "seller-b", Side.SELL, 100, 7)
+    engine.submit(front)
+    engine.submit(behind)
+    cancelled = engine.cancel("behind")
+    assert cancelled == CancelResult(behind)
+    assert engine.book.best_ask() == front
+    assert "behind" not in engine.book
+    bid = Order("bid", "buyer", Side.BUY, 100, 5)
+    result = engine.submit(bid)
+    assert result.trades == [Trade(100, 5, "bid", "front", "buyer", "seller-a")]
+    assert engine.book.best_ask() is None
