@@ -29,3 +29,66 @@ def test_cancel_order(engine):
     assert "ask" not in engine.book
     assert "bid" in engine.book
     assert match_result == MatchResult([], bid, None)
+
+def test_cancel_none_existing_order(engine):
+    ask = Order("ask", "seller", Side.SELL, 100, 10)
+    engine.submit(ask)
+    with pytest.raises(KeyError, match = "Order with id bid does not exist"):
+        cancel_result = engine.cancel("bid")
+    assert "ask" in engine.book
+
+def test_best_ask(engine): 
+    ask1 = Order("ask1", "seller", Side.SELL, 100, 10)
+    engine.submit(ask1)
+    ask2= Order("ask2", "seller", Side.SELL, 80, 10)
+    engine.submit(ask2)
+    ask3 = Order("ask3", "seller", Side.SELL, 70, 10)
+    engine.submit(ask3)
+    ask4 = Order("ask4", "seller", Side.SELL, 80, 10)
+    engine.submit(ask4)
+    ask5 = Order("ask5", "seller", Side.SELL, 70, 10)
+    engine.submit(ask5)
+    assert engine.book.best_ask() == ask3
+    assert engine.book.best_bid() is None
+
+def test_best_bid(engine): 
+    bid1 = Order("bid1", "buyer", Side.BUY, 100, 10)
+    engine.submit(bid1)
+    bid2 = Order("bid2", "buyer", Side.BUY, 120, 10)
+    engine.submit(bid2)
+    bid3 = Order("bid3", "buyer", Side.BUY, 110, 10)
+    engine.submit(bid3)
+    bid4 = Order("bid4", "buyer", Side.BUY, 120, 10)
+    engine.submit(bid4)
+    bid5 = Order("bid5", "buyer", Side.BUY, 120, 10)
+    engine.submit(bid5)
+    assert engine.book.best_bid() == bid2
+    assert engine.book.best_ask() is None
+
+def test_order_rejections(engine):
+    bid = Order("bid", "buyer", Side.BUY, 100, 10)
+    engine.submit(bid)
+    result = engine.submit(bid)
+    assert result == MatchResult([], None, "duplicate order_id")
+    ask = Order("ask", "seller", Side.SELL, -2, 10)
+    result = engine.submit(ask)
+    assert result == MatchResult([], None, "non-positive price")
+    ask = Order("ask", "seller", Side.SELL, 100, 0)
+    result = engine.submit(ask)
+    assert result == MatchResult([], None, "non-positive quantity")
+
+def test_partial_fill(engine):
+    bid = Order("bid", "buyer", Side.BUY, 100, 10)
+    engine.submit(bid)
+    ask = Order("ask", "seller", Side.SELL, 80, 6)
+    result = engine.submit(ask)
+    assert result.trades == [Trade(100, 6, ask.id, bid.id, ask.client_id, bid.client_id)]
+    assert result.resting is None
+    assert engine.book.best_bid().quantity == 4
+    assert "ask" not in engine.book
+    ask = Order("ask", "seller", Side.SELL, 80, 10)
+    result = engine.submit(ask)
+    assert result.trades == [Trade(100, 4, ask.id, bid.id, ask.client_id, bid.client_id)]
+    assert result.resting == Order("ask", "seller", Side.SELL, 80, 6)
+    assert engine.book.best_ask().quantity == 6
+    assert "bid" not in engine.book
